@@ -25,7 +25,7 @@ use m20_ecan::message::Message;
 
 use crate::{BatteryPack, BatteryReport};
 
-/// Frames per request, as rl_deploy sends them (1 ms apart, one per control cycle).
+/// Frames per request. matches vendor: rl_deploy sends 3, 1 ms apart, one per control cycle (docked captures).
 pub const FRAMES_PER_REQUEST: usize = 3;
 
 /// One charge-enable frame body (header only) with sequence `seq`.

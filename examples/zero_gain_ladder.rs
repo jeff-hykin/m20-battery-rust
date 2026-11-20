@@ -188,6 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, (t, body)) in frames.iter().enumerate() {
         next += Duration::from_nanos(t.saturating_sub(last_t)).min(Duration::from_secs(1));
         last_t = *t;
+        // matches vendor: replays rl_deploy's captured startup at its own spacing (absolute deadlines, no drift)
         std::thread::sleep(next.saturating_duration_since(Instant::now()));
         let mut body = body.clone();
         body[2] = seq;
@@ -218,6 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for body in m20_battery::charge::charge_enable_request(*seq) {
                         send(&body)?;
                         *seq = seq.wrapping_add(1);
+                        // matches vendor: rl_deploy sends the 3 charge-enable frames one per 1 ms cycle
                         std::thread::sleep(Duration::from_millis(1));
                     }
                     println!("{:.4} sent one 0xb3 request (3 frames)", start.elapsed().as_secs_f64());
@@ -232,6 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if unsafe_now(seen) {
                 return Ok(sent);
             }
+            // the pace under test, on absolute deadlines (next += period)
             std::thread::sleep(next.saturating_duration_since(Instant::now()));
         }
         drain(seen);

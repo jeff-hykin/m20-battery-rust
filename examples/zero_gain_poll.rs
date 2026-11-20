@@ -213,6 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(prev) = last_t {
                 let gap = Duration::from_nanos(t.saturating_sub(prev)).min(Duration::from_secs(1));
                 if gap > Duration::from_millis(2) {
+                    // matches vendor: rl_deploy's captured gaps between its setup steps
                     std::thread::sleep(gap);
                 }
             }
@@ -288,6 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                 Err(e) => {
                     println!("{:.4} recv error {e}", start.elapsed().as_secs_f64());
+                    // keep the pace under test after a receive error
                     std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
                     break;
                 }

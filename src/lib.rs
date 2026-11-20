@@ -22,14 +22,16 @@
 //! assert!(report.left.voltage_v > 80.0);
 //! ```
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 pub mod charge;
 
 use m20_ecan::message::{Direction, Message, BATTERY_PACK_LEN};
 use m20_ecan::FrameError;
 
-/// Cell voltage slots in a record.
+/// Cell voltage slots in a record (protocol constant: vendor `BatterySensorData`).
 pub const CELL_SLOTS: usize = 20;
-/// Temperature slots in a record.
+/// Temperature slots in a record (protocol constant: vendor `BatterySensorData`).
 pub const TEMPERATURE_SLOTS: usize = 4;
 
 /// The JBD protection-state bits.
@@ -136,7 +138,7 @@ impl BatteryPack {
             return Err(BatteryError::ShortRecord(record.len()));
         }
         let u16_at = |at: usize| u16::from_le_bytes([record[at], record[at + 1]]);
-        let f32_at = |at: usize| f32::from_le_bytes(record[at..at + 4].try_into().unwrap());
+        let f32_at = |at: usize| f32::from_le_bytes([record[at], record[at + 1], record[at + 2], record[at + 3]]);
         let serial = &record[40..72];
         let serial = &serial[..serial.iter().position(|&b| b == 0).unwrap_or(serial.len())];
         Ok(BatteryPack {

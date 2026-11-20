@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
             println!("{now} request {request} seq {seq} sent {sent} bytes {body:02x?}");
             seq = seq.wrapping_add(1);
-            // rl_deploy's spacing: one frame per 1 ms control cycle
+            // matches vendor: rl_deploy's spacing, one frame per 1 ms control cycle (docked captures)
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
