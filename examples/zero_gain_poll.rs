@@ -224,10 +224,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             send(checked(&body)?)?;
             seq = seq.wrapping_add(1);
             sent += 1;
-            let words: std::collections::BTreeSet<u16> =
-                (0..16).map(|k| u16::from_le_bytes([body[10 + k * 24 + 20], body[10 + k * 24 + 21]])).collect();
-            if words != [4].into() {
-                println!("{:.4} handshake frame {sent}: words {words:?}", start.elapsed().as_secs_f64());
+            if body.len() < 10 + 16 * 24 {
+                println!("{:.4} setup frame {sent}: type {:#04x}", start.elapsed().as_secs_f64(), body[5]);
+            } else {
+                let words: std::collections::BTreeSet<u16> =
+                    (0..16).map(|k| u16::from_le_bytes([body[10 + k * 24 + 20], body[10 + k * 24 + 21]])).collect();
+                if words != [4].into() {
+                    println!(
+                        "{:.4} frame {sent} type {:#04x}: words {words:?}",
+                        start.elapsed().as_secs_f64(),
+                        body[5]
+                    );
+                }
             }
             // drain replies so the polling below starts fresh; report any status
             let until = Instant::now() + Duration::from_millis(1);
