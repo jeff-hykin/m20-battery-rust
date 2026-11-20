@@ -12,7 +12,7 @@ fn identical_to_rl_deploys_sitting_frame() {
     for (_, direction, frame) in m20_ecan::tap::read_capture(CAPTURE).unwrap() {
         if direction == m20_ecan::Direction::ToBoard && frame[19] == 0x89 {
             let body = &frame[14..14 + 10 + 384];
-            let ours = zero_gain_poll::passive_body(body[2]);
+            let ours = zero_gain_poll::passive_body(body[2]).unwrap();
             assert_eq!(ours.as_slice(), body);
             assert!(zero_gain_poll::checked(&ours).is_ok());
             checked += 1;
@@ -23,15 +23,15 @@ fn identical_to_rl_deploys_sitting_frame() {
 
 #[test]
 fn gate_refuses_any_gain() {
-    let mut body = zero_gain_poll::passive_body(0);
+    let mut body = zero_gain_poll::passive_body(0).unwrap();
     assert!(zero_gain_poll::checked(&body).is_ok());
     body[10 + 5 * 24 + 16] = 1; // kp of one joint, checksum now stale but the gate decodes first
     assert!(zero_gain_poll::checked(&body).is_err());
-    let mut body = zero_gain_poll::passive_body(0);
+    let mut body = zero_gain_poll::passive_body(0).unwrap();
     body[10 + 3 * 24 + 20] = 5; // control word 5 (motor reset): not in the handshake
     assert!(zero_gain_poll::checked(&body).is_err());
     for word in zero_gain_poll::ALLOWED_WORDS {
-        let mut body = zero_gain_poll::passive_body(0);
+        let mut body = zero_gain_poll::passive_body(0).unwrap();
         for unit in 0..16 {
             body[10 + unit * 24 + 20..10 + unit * 24 + 22].copy_from_slice(&word.to_le_bytes());
         }

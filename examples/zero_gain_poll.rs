@@ -34,7 +34,7 @@ const SITTING_PAYLOAD: [u8; 384] = [
 ];
 
 /// rl_deploy's sitting frame body with sequence `seq`: the only joint frame this tool can send.
-pub fn passive_body(seq: u8) -> Vec<u8> {
+pub fn passive_body(seq: u8) -> Result<Vec<u8>, m20_ecan::FrameError> {
     m20_ecan::frame::encode(
         seq,
         m20_ecan::frame::FLAGS_JOINT_COMMAND,
@@ -42,7 +42,6 @@ pub fn passive_body(seq: u8) -> Vec<u8> {
         m20_ecan::FrameType::Joints,
         &SITTING_PAYLOAD,
     )
-    .expect("384 bytes fit")
 }
 
 /// Control words a zero-gain frame may carry: rl_deploy's startup handshake (1 Disable, 17 ErrorReset, 2 Enable,
@@ -275,7 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{:.4} sent 0xb3", start.elapsed().as_secs_f64());
             }
         }
-        let body = passive_body(seq);
+        let body = passive_body(seq)?;
         let sent = send(checked(&body)?);
         seq = seq.wrapping_add(1);
         if let Err(e) = &sent {

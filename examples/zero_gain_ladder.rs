@@ -226,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     enabled = true;
                 }
             }
-            send(&gate::passive_body(*seq))?;
+            send(&gate::passive_body(*seq)?)?;
             *seq = seq.wrapping_add(1);
             sent += 1;
             next += period;
