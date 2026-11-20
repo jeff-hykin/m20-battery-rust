@@ -1,6 +1,6 @@
 [package]
 name = "m20-battery"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 description = "Deep Robotics M20 (Lynx) battery packs off the ECAN motor bus: voltage, current, charge, cycles, temperatures, cells, protection and MOS state"
@@ -12,4 +12,4 @@ categories = ["science::robotics", "parser-implementations"]
 include = ["src/**", "tests/**", "Cargo.toml", "README.md", "LICENSE"]
 
 [dependencies]
-m20-ecan = "0.1"
+m20-ecan = "0.2"

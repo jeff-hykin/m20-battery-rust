@@ -22,6 +22,8 @@
 //! assert!(report.left.voltage_v > 80.0);
 //! ```
 
+pub mod charge;
+
 use m20_ecan::message::{Direction, Message, BATTERY_PACK_LEN};
 use m20_ecan::FrameError;
 
@@ -90,8 +92,9 @@ pub struct BatteryPack {
     pub serial_number: String,
     /// All 20 slots; the first `cell_count` are cells.
     pub cell_voltages_mv: [u16; CELL_SLOTS],
-    /// Voltage on the charge input.
+    /// Voltage on the charge contacts: the charger's ~84-85 V on the dock, ~10.5 V or 0 off it.
     pub charger_input_v: f32,
+    /// The BMS charge-detect input: 0 while a charger is on the contacts, 1 off the dock (active low).
     pub charge_detect: u8,
 }
 
