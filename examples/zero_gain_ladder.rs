@@ -246,13 +246,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let mut seen = Seen::default();
-    let sent = poll(&mut seq, ms(1), ms(3000), None, &mut seen, &mut drain)?;
-    report("1 kHz 3 s", &seen, sent);
+    let sent = poll(&mut seq, ms(1), ms(2000), None, &mut seen, &mut drain)?;
+    report("1 kHz 2 s", &seen, sent);
     if unsafe_now(&seen) || seen.flagged > 0 {
         println!("STOP at 1 kHz");
         return Ok(());
     }
-    for (period, secs) in [(5u64, 3u64), (10, 3), (100, 3), (500, 4), (1000, 5)] {
+    for (period, secs) in [(5u64, 2u64), (10, 2), (100, 2), (500, 3), (1000, 3)] {
         let mut seen = Seen::default();
         let sent = poll(&mut seq, ms(period), Duration::from_secs(secs), None, &mut seen, &mut drain)?;
         report(&format!("every {period} ms for {secs} s"), &seen, sent);
@@ -266,7 +266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut seen = Seen::default();
-    let sent = poll(&mut seq, ms(1), ms(4000), Some(ms(1000)), &mut seen, &mut drain)?;
+    let sent = poll(&mut seq, ms(1), ms(3000), Some(ms(1000)), &mut seen, &mut drain)?;
     report("1 kHz with 0xb3 at 1 s", &seen, sent);
     println!("done");
     Ok(())
