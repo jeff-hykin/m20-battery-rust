@@ -2,7 +2,9 @@
 //! Sends rl_deploy's sitting frame byte for byte (all 16 joints: kp = kd = 0, torque = velocity = 0, control word 4,
 //! position = the vendor calibration's URDF zero, as rl_deploy sends while passive), changing only the sequence. It
 //! stops at the first reply showing torque, motion or a status other than 1. Optionally sends one 0xb3 request.
-//! usage: zero_gain_poll --yes-send [--normal-path] [--comm-rl-deploy] [--enable-at N] <frames> <interval_ms>
+//! `--handshake FILE` first replays rl_deploy's startup frames from FILE (lines "<t_ns> tx <frame hex>" as the
+//! capture logger writes them), byte for byte apart from the sequence, 1 ms apart, through the same gate.
+//! usage: zero_gain_poll --yes-send [--handshake FILE] [--normal-path] [--comm-rl-deploy] [--enable-at N] <frames> <interval_ms>
 //!        [--max-torque 1.0] [--max-velocity 0.5] [--max-drift 0.05]
 
 /// rl_deploy's sitting payload (16 joint units), copied from its own frame on the dock (2026-11-20 12:55:57 CST):
@@ -43,20 +45,56 @@ pub fn passive_body(seq: u8) -> Vec<u8> {
     .expect("384 bytes fit")
 }
 
-/// The gate in front of the socket: a 16-joint 0x89 command with every gain, torque and velocity zero and word 4,
-/// or a bare 0xb3 header. Anything else is refused.
+/// Control words a zero-gain frame may carry: rl_deploy's startup handshake (1 Disable, 17 ErrorReset, 2 Enable,
+/// 23 GetStatusWord) and 4, the motor-control word it sends with zero gains while sitting.
+pub const ALLOWED_WORDS: [u16; 5] = [1, 17, 2, 23, 4];
+
+/// rl_deploy's 0xb2 startup block, as captured.
+const SETUP_B2: [u8; 64] = [
+    0x01, 0x01, 0x01, 0x05, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// rl_deploy's per-joint setup frames (0x81): 16 units, no velocity, torque or gains; ErrorReset, Disable, Enable,
+/// GetStatusWord with a zero value, or SetMotorTemperature (14) with its value 1300.
+fn setup_81_ok(payload: &[u8]) -> bool {
+    payload.len() == 16 * 24
+        && payload.chunks(24).all(|u| {
+            let value = u32::from_le_bytes([u[4], u[5], u[6], u[7]]);
+            let word = u16::from_le_bytes([u[20], u[21]]);
+            u[8..20].iter().all(|&b| b == 0)
+                && match word {
+                    1 | 2 | 17 | 23 => value == 0,
+                    14 => value == 1300,
+                    _ => false,
+                }
+        })
+}
+
+/// The gate in front of the socket: a 16-joint 0x89 command with every gain, torque and velocity zero and an
+/// allowed control word, or a bare 0xb3 header. Anything else is refused.
 pub fn checked(body: &[u8]) -> Result<&[u8], String> {
     let frame = m20_ecan::Frame::parse(body).map_err(|e| e.to_string())?;
     match (frame.header.frame_type, &m20_ecan::Message::decode(&frame, m20_ecan::Direction::ToBoard)) {
         (m20_ecan::FrameType::Joints, Ok(m20_ecan::Message::JointCommands(commands)))
             if commands.len() == 16
                 && commands.iter().all(|c| {
-                    c.kp == 0.0 && c.kd == 0.0 && c.torque == 0.0 && c.velocity == 0.0 && c.control_word == 4
+                    c.kp == 0.0
+                        && c.kd == 0.0
+                        && c.torque == 0.0
+                        && c.velocity == 0.0
+                        && ALLOWED_WORDS.contains(&c.control_word)
                 }) =>
         {
             Ok(body)
         }
         (m20_ecan::FrameType::ChargeEnable, _) if body.len() == 10 => Ok(body),
+        // rl_deploy's startup setup, exactly as it sends it: version request, the 0xb2 setup block, per-joint 0x81
+        (m20_ecan::FrameType::Version, _) if body.len() == 10 && body[4] == 0x11 => Ok(body),
+        (m20_ecan::FrameType::Other(0xb2), _) if frame.payload == SETUP_B2 && body[4] == 0x11 => Ok(body),
+        (m20_ecan::FrameType::Type81, _) if body[4] == 0x84 && setup_81_ok(frame.payload) => Ok(body),
         _ => Err(format!("refusing to send {:02x?}", &body[..body.len().min(24)])),
     }
 }
@@ -83,6 +121,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let normal = flag("--normal-path");
     let comm = flag("--comm-rl-deploy");
+    let handshake = match args.iter().position(|a| a == "--handshake") {
+        Some(i) => {
+            let path = args.get(i + 1).ok_or("--handshake FILE")?.clone();
+            args.drain(i..i + 2);
+            Some(path)
+        }
+        None => None,
+    };
     let mut value = |name: &str, default: f64| -> Result<f64, Box<dyn std::error::Error>> {
         match args.iter().position(|a| a == name) {
             Some(i) => {
@@ -156,6 +202,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut states, mut batteries, mut others) = (0usize, 0usize, 0usize);
     let mut first_q: Option<Vec<f32>> = None;
     let mut seq = 0u8;
+    if let Some(path) = &handshake {
+        let mut sent = 0;
+        let mut last_t: Option<u64> = None;
+        for line in std::fs::read_to_string(path)?.lines() {
+            let mut parts = line.split_whitespace();
+            let (Some(t), Some("tx"), Some(hex)) = (parts.next(), parts.next(), parts.next()) else { continue };
+            // the captured spacing between frames (rl_deploy waits 100 / 500 ms between setup steps), at most 1 s
+            let t: u64 = t.parse()?;
+            if let Some(prev) = last_t {
+                let gap = Duration::from_nanos(t.saturating_sub(prev)).min(Duration::from_secs(1));
+                if gap > Duration::from_millis(2) {
+                    std::thread::sleep(gap);
+                }
+            }
+            last_t = Some(t);
+            let bytes: Vec<u8> =
+                (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16)).collect::<Result<_, _>>()?;
+            let mut body = bytes.get(14..).ok_or("short frame")?.to_vec();
+            body[2] = seq;
+            send(checked(&body)?)?;
+            seq = seq.wrapping_add(1);
+            sent += 1;
+            let words: std::collections::BTreeSet<u16> =
+                (0..16).map(|k| u16::from_le_bytes([body[10 + k * 24 + 20], body[10 + k * 24 + 21]])).collect();
+            if words != [4].into() {
+                println!("{:.4} handshake frame {sent}: words {words:?}", start.elapsed().as_secs_f64());
+            }
+            // drain replies so the polling below starts fresh; report any status
+            let until = Instant::now() + Duration::from_millis(1);
+            while Instant::now() < until {
+                if let Ok(n) = recv(&mut buf) {
+                    if let Ok(frame) = Frame::parse_ethernet(&buf[..n]) {
+                        if let Ok(Message::JointStates { joints, .. }) = Message::decode(&frame, Direction::FromBoard) {
+                            let st: std::collections::BTreeSet<u16> = joints.iter().map(|j| j.status_word).collect();
+                            let tau = joints.iter().map(|j| j.torque.abs()).fold(0.0f32, f32::max);
+                            let vel = joints.iter().map(|j| j.velocity.abs()).fold(0.0f32, f32::max);
+                            if tau > max_torque || vel > max_velocity {
+                                println!(
+                                    "{:.4} STOP during handshake: tau {tau:.3} dq {vel:.3}",
+                                    start.elapsed().as_secs_f64()
+                                );
+                                return Ok(());
+                            }
+                            if sent % 100 == 1 || st != [1].into() && sent % 10 == 1 {
+                                println!(
+                                    "{:.4} handshake reply after frame {sent}: status {st:?} tau {tau:.3} dq {vel:.3}",
+                                    start.elapsed().as_secs_f64()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{:.4} handshake done: {sent} frames", start.elapsed().as_secs_f64());
+    }
     for i in 0..frames {
         if enable_at >= 0.0 && i == enable_at as usize {
             for body in m20_battery::charge::charge_enable_request(seq) {
