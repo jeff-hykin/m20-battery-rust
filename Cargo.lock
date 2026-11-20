@@ -10,7 +10,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "m20-battery"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "libc",
  "m20-ecan",
@@ -18,9 +18,9 @@ dependencies = [
 
 [[package]]
 name = "m20-ecan"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52b29dbf126c39a70da61fd1150304620b4b5f7b4ede16faff5db1cfcce58260"
+checksum = "dfa26ed71847cf1ee5736706c5d69dcb66d5044c50cd99eb6458412838bfb654"
 dependencies = [
  "libc",
 ]
