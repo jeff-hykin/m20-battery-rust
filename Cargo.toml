@@ -1,6 +1,6 @@
 [package]
 name = "m20-battery"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.88"
 description = "Deep Robotics M20 (Lynx) battery packs off the ECAN motor bus: voltage, current, charge, cycles, temperatures, cells, protection and MOS state"

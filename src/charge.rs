@@ -95,6 +95,48 @@ impl ChargeEnabler {
     }
 }
 
+/// The charge rule fed straight from motor-bus frames, for whoever owns the bus: commands it sent (a switch to no
+/// position gain on the legs is a lie-down) and battery frames from the board. Returns true when a request is due.
+#[derive(Clone, Debug, Default)]
+pub struct BusCharge {
+    rule: ChargeEnabler,
+    legs_passive: bool,
+    seen_command: bool,
+    pub last: Option<Decision>,
+}
+
+impl BusCharge {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One frame (Ethernet) and its direction; true = send one charge-enable request now.
+    pub fn on_frame(&mut self, direction: m20_ecan::Direction, frame: &[u8]) -> bool {
+        let Ok((_, message)) = m20_ecan::decode_ethernet(frame, direction) else { return false };
+        match (direction, &message) {
+            (m20_ecan::Direction::ToBoard, Message::JointCommands(commands)) => {
+                let passive =
+                    commands.iter().filter(|c| c.joint.kind != m20_ecan::JointKind::Wheel).all(|c| c.kp == 0.0);
+                if passive && (!self.legs_passive || !self.seen_command) {
+                    self.rule.lay_down();
+                }
+                self.legs_passive = passive;
+                self.seen_command = true;
+                false
+            }
+            (m20_ecan::Direction::FromBoard, Message::Battery(_)) => match BatteryReport::from_message(&message) {
+                Ok(report) => {
+                    let decision = self.rule.on_report(&report, self.legs_passive);
+                    self.last = Some(decision);
+                    decision == Decision::Request
+                }
+                Err(_) => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +175,31 @@ mod tests {
         rule.lay_down();
         assert_eq!(rule.on_report(&charging, false), Decision::Standing);
         assert_eq!(rule.on_report(&off_dock, true), Decision::NotDocked);
+    }
+
+    #[test]
+    fn bus_charge_probes_after_lying_down_then_follows_the_dock() {
+        let ethernet = |body: Vec<u8>| m20_ecan::ethernet::wrap([2, 0, 0, 0, 0, 1], &body);
+        let sitting = ethernet(Message::encode_joint_commands(0, &m20_ecan::startup::sitting_commands()));
+        let battery = |p: BatteryPack| {
+            let mut payload = Vec::new();
+            for _ in 0..2 {
+                let mut record = [0u8; m20_ecan::message::BATTERY_PACK_LEN];
+                record[0..2].copy_from_slice(&((p.voltage_v * 100.0) as u16).to_le_bytes());
+                record[20] = p.mos_state;
+                record[112..114].copy_from_slice(&((p.charger_input_v * 100.0) as u16).to_le_bytes());
+                record[114] = p.charge_detect;
+                payload.extend_from_slice(&record);
+            }
+            ethernet(m20_ecan::frame::encode(0, 6, 0x21, m20_ecan::FrameType::Battery, &payload).unwrap())
+        };
+        let mut charge = BusCharge::new();
+        assert!(!charge.on_frame(m20_ecan::Direction::ToBoard, &sitting));
+        assert!(charge.on_frame(m20_ecan::Direction::FromBoard, &battery(pack(2, 1, 0))), "probe after lying down");
+        assert!(!charge.on_frame(m20_ecan::Direction::FromBoard, &battery(pack(2, 1, 10))));
+        assert!(charge.on_frame(m20_ecan::Direction::FromBoard, &battery(pack(2, 0, 84))), "on the charger, MOS off");
+        assert!(!charge.on_frame(m20_ecan::Direction::FromBoard, &battery(pack(3, 0, 84))));
+        assert_eq!(charge.last, Some(Decision::Charging));
     }
 
     #[test]
